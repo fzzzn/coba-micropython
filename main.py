@@ -1,13 +1,22 @@
 from wifi import wifi_connect
 from ping import test_ping
 from dht22 import DHT22Sensor
+from deepsleep import DeepSleepManager, print_wake_info
 import socket
 from machine import Pin
 import gc
 
+# === CONFIGURATION ===
+LOW_POWER_MODE = False  # Set True for battery-powered sensor mode
+SLEEP_MINUTES = 5       # Deep sleep duration between readings (low power mode)
+WAKE_PIN = 0            # GPIO for external wake-up (button), set None to disable
+
 # Setup built-in LED (GPIO2 for most ESP32 boards)
 led = Pin(2, Pin.OUT)
 led.value(0)  # Start with LED off
+
+# Initialize deep sleep manager
+dsm = DeepSleepManager(wake_pin=WAKE_PIN)
 
 # Setup DHT22 sensor 
 sensor = DHT22Sensor(pin=4)
@@ -81,15 +90,43 @@ def start_web_server():
 
 # Main execution
 gc.collect()
-print("Starting ESP32 LED Web Server...")
-wlan = wifi_connect(retries=5, reboot_on_fail=True)
+print("\n" + "="*40)
+print("ESP32 Starting...")
+print_wake_info()
+print("="*40)
 
-if wlan and wlan.isconnected():
-    test_ping()
-    ip = wlan.ifconfig()[0]
-    print("\n" + "="*40)
-    print("Web interface: http://{}".format(ip))
-    print("="*40 + "\n")
-    start_web_server()
+if LOW_POWER_MODE:
+    # Battery-saving mode: read sensor, send data, sleep
+    print("\n*** LOW POWER MODE ***")
+    
+    # Quick sensor reading
+    if sensor:
+        data = sensor.get_readings()
+        if data:
+            print("Temperature: {:.1f}°C".format(data['temperature']))
+            print("Humidity: {:.1f}%".format(data['humidity']))
+            
+            # Optional: Connect to WiFi and send data
+            # wlan = wifi_connect(retries=2, reboot_on_fail=False)
+            # if wlan and wlan.isconnected():
+            #     # Send data via HTTP/MQTT here
+            #     wlan.active(False)  # Turn off WiFi to save power
+    
+    # Enter deep sleep
+    print("\nSleeping for {} minutes...".format(SLEEP_MINUTES))
+    dsm.sleep_minutes(SLEEP_MINUTES)
+
 else:
-    print("Failed to connect. Cannot start server.")
+    # Normal mode: Web server
+    print("\nStarting ESP32 LED Web Server...")
+    wlan = wifi_connect(retries=5, reboot_on_fail=True)
+
+    if wlan and wlan.isconnected():
+        test_ping()
+        ip = wlan.ifconfig()[0]
+        print("\n" + "="*40)
+        print("Web interface: http://{}".format(ip))
+        print("="*40 + "\n")
+        start_web_server()
+    else:
+        print("Failed to connect. Cannot start server.")
