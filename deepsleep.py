@@ -5,16 +5,6 @@ import time
 class DeepSleepManager:
     """Deep Sleep Manager for ESP32 power conservation"""
     
-    # Wake-up reasons
-    WAKE_REASONS = {
-        machine.DEEPSLEEP_RESET: "Deep Sleep",
-        machine.SOFT_RESET: "Soft Reset", 
-        machine.PWRON_RESET: "Power On",
-        machine.HARD_RESET: "Hard Reset",
-        machine.WDT_RESET: "Watchdog",
-        machine.DEEPSLEEP: "Deep Sleep Timer"
-    }
-    
     def __init__(self, wake_pin=None):
         """
         Initialize Deep Sleep Manager
@@ -27,33 +17,31 @@ class DeepSleepManager:
     def get_wake_reason(self):
         """Get the reason for the last wake-up"""
         reason = machine.reset_cause()
-        return self.WAKE_REASONS.get(reason, "Unknown ({})".format(reason))
+        reasons = {
+            machine.DEEPSLEEP_RESET: "Deep Sleep",
+            machine.SOFT_RESET: "Soft Reset", 
+            machine.PWRON_RESET: "Power On",
+            machine.HARD_RESET: "Hard Reset",
+            machine.WDT_RESET: "Watchdog"
+        }
+        return reasons.get(reason, "Unknown ({})".format(reason))
     
     def was_deep_sleep_wake(self):
         """Check if device woke from deep sleep"""
         return machine.reset_cause() == machine.DEEPSLEEP_RESET
     
-    def configure_timer_wake(self, sleep_ms):
+    def configure_ext_wake(self, pin, level=1):
         """
-        Configure timer-based wake-up
-        
-        Args:
-            sleep_ms: Sleep duration in milliseconds
-        """
-        self.sleep_duration = sleep_ms
-        
-    def configure_ext_wake(self, pin, level=esp32.WAKEUP_ANY_HIGH):
-        """
-        Configure external pin wake-up
+        Configure external pin wake-up (EXT0)
         
         Args:
             pin: GPIO pin number (must be RTC GPIO: 0,2,4,12-15,25-27,32-39)
-            level: esp32.WAKEUP_ANY_HIGH or esp32.WAKEUP_ALL_LOW
+            level: 1 for wake on HIGH, 0 for wake on LOW
         """
         self.wake_pin = pin
-        wake_pin = machine.Pin(pin, machine.Pin.IN, machine.Pin.PULL_DOWN)
-        esp32.wake_on_ext0(wake_pin, level)
-        print("External wake configured on GPIO{}".format(pin))
+        wake_pin = machine.Pin(pin, machine.Pin.IN)
+        esp32.wake_on_ext0(pin=wake_pin, level=level)
+        print("External wake configured on GPIO{} (level={})".format(pin, level))
     
     def sleep_ms(self, duration_ms):
         """
@@ -63,8 +51,8 @@ class DeepSleepManager:
             duration_ms: Sleep duration in milliseconds (1000ms = 1 second)
         """
         print("Entering deep sleep for {}ms...".format(duration_ms))
-        time.sleep(0.1)  # Allow print to complete
-        machine.deepsleep(duration_ms)
+        time.sleep_ms(100)  # Allow print to complete
+        machine.deepsleep(int(duration_ms))
     
     def sleep_seconds(self, duration_s):
         """
@@ -73,7 +61,7 @@ class DeepSleepManager:
         Args:
             duration_s: Sleep duration in seconds
         """
-        self.sleep_ms(duration_s * 1000)
+        self.sleep_ms(int(duration_s) * 1000)
     
     def sleep_minutes(self, duration_min):
         """
@@ -82,7 +70,8 @@ class DeepSleepManager:
         Args:
             duration_min: Sleep duration in minutes
         """
-        self.sleep_ms(duration_min * 60 * 1000)
+        # Calculate in steps to avoid integer overflow
+        self.sleep_ms(int(duration_min) * 60 * 1000)
     
     def sleep_until_ext_wake(self):
         """Enter deep sleep until external pin triggers wake-up"""
@@ -90,7 +79,7 @@ class DeepSleepManager:
             print("Error: No wake pin configured. Use configure_ext_wake() first.")
             return
         print("Entering deep sleep until GPIO{} triggers...".format(self.wake_pin))
-        time.sleep(0.1)
+        time.sleep_ms(100)
         machine.deepsleep()
     
     def light_sleep_ms(self, duration_ms):
@@ -101,8 +90,8 @@ class DeepSleepManager:
             duration_ms: Sleep duration in milliseconds
         """
         print("Entering light sleep for {}ms...".format(duration_ms))
-        time.sleep(0.1)
-        machine.lightsleep(duration_ms)
+        time.sleep_ms(100)
+        machine.lightsleep(int(duration_ms))
         print("Woke from light sleep")
 
 
@@ -121,7 +110,7 @@ def test_deep_sleep(sleep_seconds=10):
     
     print("\nWill enter deep sleep for {} seconds...".format(sleep_seconds))
     print("Device will restart after wake-up.")
-    time.sleep(2)
+    time.sleep_ms(2000)
     
     dsm = DeepSleepManager()
     dsm.sleep_seconds(sleep_seconds)
